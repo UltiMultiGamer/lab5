@@ -1,0 +1,25 @@
+{
+  "name": "lab5-contacts-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CRUD REST API for a phone contact list, documented with OpenAPI",
+  "main": "server.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "docs": "redocly build-docs openapi.yaml -o redoc-static.html",
+    "mock": "prism mock openapi.yaml --port 4010",
+    "lint:api": "redocly lint openapi.yaml"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "mongodb": "^6.8.0"
+  },
+  "devDependencies": {
+    "@redocly/cli": "^1.19.0",
+    "@stoplight/prism-cli": "^5.8.0"
+  }
+}

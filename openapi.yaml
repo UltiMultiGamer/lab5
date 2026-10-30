@@ -1,0 +1,376 @@
+openapi: 3.0.3
+
+info:
+  title: Contacts API
+  version: 1.0.0
+  description: |
+    REST API телефонной записной книжки.
+
+    Ресурс — контакт, адресуемый по URI `/v1/contact/{uid}`.
+    Операции над ресурсом выражены стандартными методами HTTP, состояние сеанса
+    на сервере не хранится: каждый запрос самодостаточен.
+  contact:
+    name: Practicum
+    email: student@example.org
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:3002
+    description: Локальный сервер разработки
+  - url: http://localhost:4010
+    description: Имитационный сервер Prism
+  - url: https://lab5-contacts-api.onrender.com
+    description: Развёрнутое приложение
+
+tags:
+  - name: contacts
+    description: Управление контактами
+  - name: service
+    description: Служебные конечные точки
+
+paths:
+  /health:
+    get:
+      tags: [service]
+      summary: Проверка работоспособности сервиса
+      operationId: getHealth
+      responses:
+        "200":
+          description: Сервис доступен
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  store:
+                    type: string
+                    enum: [mongodb, memory]
+                    example: mongodb
+
+  /v1/contact:
+    get:
+      tags: [contacts]
+      summary: Получить список контактов
+      description: Возвращает все контакты, отсортированные по имени. Параметр `q` выполняет поиск по имени и телефону.
+      operationId: listContacts
+      parameters:
+        - name: q
+          in: query
+          required: false
+          description: Подстрока для поиска по имени или номеру телефона
+          schema:
+            type: string
+            minLength: 1
+          example: Иван
+      responses:
+        "200":
+          description: Список контактов
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContactList"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    post:
+      tags: [contacts]
+      summary: Создать контакт
+      description: Идентификатор назначается сервером, поэтому метод не идемпотентен.
+      operationId: createContact
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ContactInput"
+            examples:
+              minimal:
+                summary: Только обязательные поля
+                value:
+                  name: Иван Петров
+                  phone: "+7 916 123-45-67"
+              full:
+                summary: Со всеми полями
+                value:
+                  name: Мария Смирнова
+                  phone: "+7 495 111-22-33"
+                  email: maria@example.org
+                  note: Куратор практики
+      responses:
+        "201":
+          description: Контакт создан
+          headers:
+            Location:
+              description: URI созданного ресурса
+              schema:
+                type: string
+              example: /v1/contact/66b0f2c1d4a1e8a9c3b5d7e1
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Contact"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /v1/contact/{uid}:
+    parameters:
+      - $ref: "#/components/parameters/Uid"
+
+    get:
+      tags: [contacts]
+      summary: Получить контакт по идентификатору
+      operationId: getContact
+      responses:
+        "200":
+          description: Контакт найден
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Contact"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    put:
+      tags: [contacts]
+      summary: Полностью заменить контакт
+      description: Тело должно содержать полное представление ресурса. Отсутствующие необязательные поля сбрасываются в `null`.
+      operationId: replaceContact
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ContactInput"
+            example:
+              name: Иван Петров
+              phone: "+7 916 000-00-00"
+              email: ivan@example.org
+              note: null
+      responses:
+        "200":
+          description: Контакт заменён
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Contact"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    patch:
+      tags: [contacts]
+      summary: Частично обновить контакт
+      operationId: updateContact
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ContactPatch"
+            example:
+              phone: "+7 916 999-88-77"
+      responses:
+        "200":
+          description: Контакт обновлён
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Contact"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    delete:
+      tags: [contacts]
+      summary: Удалить контакт
+      operationId: deleteContact
+      responses:
+        "204":
+          description: Контакт удалён, тело ответа отсутствует
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+components:
+  parameters:
+    Uid:
+      name: uid
+      in: path
+      required: true
+      description: Уникальный идентификатор контакта
+      schema:
+        type: string
+        minLength: 1
+      example: 66b0f2c1d4a1e8a9c3b5d7e1
+
+  schemas:
+    Contact:
+      type: object
+      required: [uid, name, phone, createdAt]
+      properties:
+        uid:
+          type: string
+          readOnly: true
+          example: 66b0f2c1d4a1e8a9c3b5d7e1
+        name:
+          type: string
+          minLength: 2
+          maxLength: 80
+          example: Иван Петров
+        phone:
+          type: string
+          pattern: '^\+?[0-9 ()-]{5,20}$'
+          example: "+7 916 123-45-67"
+        email:
+          type: string
+          nullable: true
+          format: email
+          example: ivan@example.org
+        note:
+          type: string
+          nullable: true
+          maxLength: 500
+          example: Одногруппник
+        createdAt:
+          type: string
+          format: date-time
+          readOnly: true
+          example: "2024-09-01T10:15:00.000Z"
+
+    ContactInput:
+      type: object
+      required: [name, phone]
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 80
+          example: Иван Петров
+        phone:
+          type: string
+          pattern: '^\+?[0-9 ()-]{5,20}$'
+          example: "+7 916 123-45-67"
+        email:
+          type: string
+          nullable: true
+          format: email
+          example: ivan@example.org
+        note:
+          type: string
+          nullable: true
+          maxLength: 500
+          example: Одногруппник
+
+    ContactPatch:
+      type: object
+      minProperties: 1
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 80
+        phone:
+          type: string
+          pattern: '^\+?[0-9 ()-]{5,20}$'
+        email:
+          type: string
+          nullable: true
+          format: email
+        note:
+          type: string
+          nullable: true
+          maxLength: 500
+
+    ContactList:
+      type: object
+      required: [total, items]
+      properties:
+        total:
+          type: integer
+          minimum: 0
+          example: 2
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Contact"
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          example: Contact not found
+        details:
+          type: array
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+                example: phone
+              message:
+                type: string
+                example: Phone must match +?[0-9 ()-] and be 5 to 20 characters
+
+  responses:
+    BadRequest:
+      description: Некорректное тело запроса
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: Request body is not valid JSON
+
+    NotFound:
+      description: Ресурс не найден
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: Contact not found
+
+    ValidationError:
+      description: Тело запроса не прошло проверку
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: Validation failed
+            details:
+              - field: phone
+                message: Phone must match +?[0-9 ()-] and be 5 to 20 characters
+
+    InternalError:
+      description: Внутренняя ошибка сервера
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: Internal server error

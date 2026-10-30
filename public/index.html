@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Практическая работа 5 — Записная книжка</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 820px; margin: 2rem auto; padding: 0 1rem; line-height: 1.4; }
+  h1 { font-size: 1.3rem; }
+  h2 { font-size: 1rem; margin-top: 1.5rem; }
+  form { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-bottom: 1rem; }
+  form .wide { grid-column: 1 / -1; }
+  input, button, textarea { font: inherit; padding: 0.4rem; }
+  textarea { resize: vertical; }
+  button { cursor: pointer; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border: 1px solid #ccc; padding: 0.4rem; text-align: left; vertical-align: top; }
+  th { font-weight: normal; color: #555; }
+  td button { padding: 0.2rem 0.5rem; }
+  .row-actions { display: flex; gap: 0.4rem; }
+  .status { color: #555; min-height: 1.4em; }
+  .toolbar { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+  .toolbar input { flex: 1; }
+  nav a { margin-right: 1rem; }
+</style>
+</head>
+<body>
+<h1>Записная книжка</h1>
+<nav>
+  <a href="/docs.html">Документация ReDoc</a>
+  <a href="/openapi.yaml">openapi.yaml</a>
+  <a href="/health">/health</a>
+</nav>
+
+<h2 id="form-title">Новый контакт</h2>
+<form id="contact-form">
+  <input id="name" placeholder="Имя" required minlength="2" maxlength="80">
+  <input id="phone" placeholder="Телефон" required pattern="\+?[0-9 ()\-]{5,20}">
+  <input id="email" type="email" placeholder="Email" class="wide">
+  <textarea id="note" placeholder="Заметка" rows="2" maxlength="500" class="wide"></textarea>
+  <div class="wide">
+    <button type="submit" id="submit">Добавить</button>
+    <button type="button" id="cancel" hidden>Отмена</button>
+  </div>
+</form>
+
+<p class="status" id="status"></p>
+
+<h2>Контакты</h2>
+<div class="toolbar">
+  <input id="search" placeholder="Поиск по имени или телефону">
+  <button id="refresh">Обновить</button>
+</div>
+
+<table>
+  <thead>
+    <tr><th>Имя</th><th>Телефон</th><th>Email</th><th>Заметка</th><th></th></tr>
+  </thead>
+  <tbody id="rows"></tbody>
+</table>
+
+<script>
+const API = "/v1/contact";
+const fields = ["name", "phone", "email", "note"];
+const statusEl = document.getElementById("status");
+const rowsEl = document.getElementById("rows");
+let editingUid = null;
+
+async function api(method, url, body) {
+  const options = { method, headers: {} };
+  if (body !== undefined) {
+    options.headers["Content-Type"] = "application/json";
+    options.body = JSON.stringify(body);
+  }
+  const response = await fetch(url, options);
+  if (response.status === 204) return null;
+  const data = await response.json();
+  if (!response.ok) {
+    const detail = (data.details || []).map((item) => item.field + ": " + item.message).join("; ");
+    throw new Error(data.error + (detail ? " (" + detail + ")" : ""));
+  }
+  return data;
+}
+
+function readForm() {
+  const payload = {};
+  fields.forEach((field) => {
+    const value = document.getElementById(field).value.trim();
+    payload[field] = value === "" ? null : value;
+  });
+  return payload;
+}
+
+function resetForm() {
+  editingUid = null;
+  fields.forEach((field) => { document.getElementById(field).value = ""; });
+  document.getElementById("form-title").textContent = "Новый контакт";
+  document.getElementById("submit").textContent = "Добавить";
+  document.getElementById("cancel").hidden = true;
+}
+
+function startEdit(contact) {
+  editingUid = contact.uid;
+  fields.forEach((field) => { document.getElementById(field).value = contact[field] || ""; });
+  document.getElementById("form-title").textContent = "Редактирование: " + contact.name;
+  document.getElementById("submit").textContent = "Сохранить";
+  document.getElementById("cancel").hidden = false;
+  window.scrollTo(0, 0);
+}
+
+function render(items) {
+  rowsEl.replaceChildren();
+  if (!items.length) {
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+    cell.colSpan = 5;
+    cell.textContent = "Записей нет";
+    row.append(cell);
+    rowsEl.append(row);
+    return;
+  }
+
+  items.forEach((contact) => {
+    const row = document.createElement("tr");
+    ["name", "phone", "email", "note"].forEach((field) => {
+      const cell = document.createElement("td");
+      cell.textContent = contact[field] || "—";
+      row.append(cell);
+    });
+
+    const actions = document.createElement("td");
+    const wrapper = document.createElement("div");
+    wrapper.className = "row-actions";
+
+    const edit = document.createElement("button");
+    edit.textContent = "Изменить";
+    edit.addEventListener("click", () => startEdit(contact));
+
+    const remove = document.createElement("button");
+    remove.textContent = "Удалить";
+    remove.addEventListener("click", () => destroy(contact));
+
+    wrapper.append(edit, remove);
+    actions.append(wrapper);
+    row.append(actions);
+    rowsEl.append(row);
+  });
+}
+
+async function load() {
+  const query = document.getElementById("search").value.trim();
+  try {
+    const data = await api("GET", API + (query ? "?q=" + encodeURIComponent(query) : ""));
+    render(data.items);
+    statusEl.textContent = "Загружено записей: " + data.total;
+  } catch (error) {
+    statusEl.textContent = "Ошибка: " + error.message;
+  }
+}
+
+async function destroy(contact) {
+  if (!confirm("Удалить контакт «" + contact.name + "»?")) return;
+  try {
+    await api("DELETE", API + "/" + contact.uid);
+    if (editingUid === contact.uid) resetForm();
+    statusEl.textContent = "Контакт удалён";
+    load();
+  } catch (error) {
+    statusEl.textContent = "Ошибка: " + error.message;
+  }
+}
+
+document.getElementById("contact-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const payload = readForm();
+  try {
+    if (editingUid) {
+      await api("PUT", API + "/" + editingUid, payload);
+      statusEl.textContent = "Контакт обновлён";
+    } else {
+      await api("POST", API, payload);
+      statusEl.textContent = "Контакт создан";
+    }
+    resetForm();
+    load();
+  } catch (error) {
+    statusEl.textContent = "Ошибка: " + error.message;
+  }
+});
+
+document.getElementById("cancel").addEventListener("click", resetForm);
+document.getElementById("refresh").addEventListener("click", load);
+document.getElementById("search").addEventListener("input", load);
+
+load();
+</script>
+</body>
+</html>
